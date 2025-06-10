@@ -1,32 +1,29 @@
-const Product = require('../models/Product');
+const Product = require('../models/Product')
 
-exports.getAllProducts = async (req, res) => {
-  try {
-    const products = await Product.find();
-    res.json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Lỗi khi lấy sản phẩm' });
-  }
-};
-
+// Thêm sản phẩm mới
 exports.createProduct = async (req, res) => {
   try {
-    const { name, description, price, imageUrl, isCustomizable, parts } = req.body;
+    const { name, description, categoryGroup, categoryName, price, quantity } = req.body
 
-    const product = new Product({
+    // Validate bắt buộc có nhóm và loại danh mục
+    if (!name || !categoryGroup || !categoryName) {
+      return res.status(400).json({ message: 'Thiếu dữ liệu bắt buộc' })
+    }
+
+    // Tạo mới
+    const newProduct = new Product({
       name,
       description,
+      categoryGroup,
+      categoryName,
       price,
-      imageUrl,
-      isCustomizable,
-      parts: isCustomizable ? parts : []
-    });
+      quantity,
+    })
 
-    await product.save();
-    res.status(201).json(product);
+    await newProduct.save()
+    return res.status(201).json({ message: 'Thêm sản phẩm thành công', product: newProduct })
   } catch (error) {
-    console.error(error);
-    res.status(400).json({ message: 'Lỗi khi tạo sản phẩm' });
+    console.error(error)
+    return res.status(500).json({ message: 'Lỗi server' })
   }
-};
+}

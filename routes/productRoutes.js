@@ -1,12 +1,8 @@
-const express = require('express');
-const router = express.Router();
+const express = require('express')
+const router = express.Router()
+const productController = require('../controllers/product.controller')
 
-const productController = require('../controllers/product.controller');
+// POST thêm sản phẩm mới
+router.post('/add', productController.createProduct)
 
-// GET /api/products - lấy danh sách sản phẩm
-router.get('/', productController.getAllProducts);
-
-// POST /api/products - thêm sản phẩm mới
-router.post('/', productController.createProduct);
-
-module.exports = router;
+module.exports = router

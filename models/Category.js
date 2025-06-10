@@ -1,7 +1,10 @@
 // models/Category.js
 const mongoose = require('mongoose');
-const categorySchema = new mongoose.Schema({
-  name: { type: String, required: true }, // Ví dụ: "Tai", "Thân", "Mắt"
-  type: { type: String, enum: ['base', 'feature', 'accessory'] } // thân, đặc điểm, phụ kiện
+const CategorySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  parent: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
+  type: { type: String, required: true }, // "body", "ear", "eye", "clothing", "accessory", "option"
+  image: String,
+  price: Number
 });
-module.exports = mongoose.model('Category', categorySchema);
+module.exports = mongoose.model('Category', CategorySchema);

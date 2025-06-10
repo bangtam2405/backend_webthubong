@@ -9,7 +9,7 @@ exports.register = async (req, res) => {
     if (userExists) return res.status(400).json({ message: "Email đã được đăng ký" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ name, email, password: hashedPassword });
+    const newUser = await User.create({ name, email, password: hashedPassword, role: "user" });
 
     res.status(201).json({ message: "Tạo tài khoản thành công", userId: newUser._id });
   } catch (err) {
@@ -26,7 +26,11 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: "Mật khẩu sai" });
 
-    const token = jwt.sign({ userId: user._id }, "secret_key", { expiresIn: "7d" });
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET, // ✅ dùng đúng biến môi trường
+      { expiresIn: "7d" }
+    );
 
     res.json({ message: "Đăng nhập thành công", token });
   } catch (err) {

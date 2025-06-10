@@ -1,12 +1,13 @@
-// models/Product.js
-const mongoose = require('mongoose');
-const productSchema = new mongoose.Schema({
-  name: String,
-  description: String,
-  price: Number,
-  imageUrl: String,
-  isCustomizable: Boolean,
-  category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' }, // VD: "Thân"
-  parts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Part' }]
-});
-module.exports = mongoose.model('Product', productSchema);
+const mongoose = require('mongoose')
+
+const ProductSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String },
+  categoryGroup: { type: String, required: true }, // vd: "Phụ kiện"
+  categoryName: { type: String, required: true }, // vd: "Tai"
+  price: { type: Number, default: 0 },
+  quantity: { type: Number, default: 0 },
+  // ... các trường khác nếu cần
+})
+
+module.exports = mongoose.model('Product', ProductSchema)
