@@ -4,7 +4,9 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
-
+const authController = require("../controllers/auth.controller");
+const { auth } = require('../middleware/auth');
+router.get('/me', auth, authController.getProfile);
 // POST /api/auth/register
 router.post('/register',
   // Validate dữ liệu đầu vào
@@ -73,4 +75,11 @@ router.post('/login',
       res.status(500).send('Server error');
     }
   });
+
+  // Cập nhật tên người dùng
+router.put("/profile", authController.updateProfile);
+
+router.get('/me', auth, authController.getProfile);
+// Đổi mật khẩu
+router.put("/change-password", authController.changePassword);
 module.exports = router;
