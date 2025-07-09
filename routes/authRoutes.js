@@ -6,80 +6,35 @@ const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const authController = require("../controllers/auth.controller");
 const { auth } = require('../middleware/auth');
+
 router.get('/me', auth, authController.getProfile);
 // POST /api/auth/register
-router.post('/register',
-  // Validate dữ liệu đầu vào
-  body('username').notEmpty().withMessage('Username is required'),
-  body('email').isEmail().withMessage('Email invalid'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 chars'),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { username, email, password } = req.body;
-
-    try {
-      // Kiểm tra user tồn tại chưa
-      let user = await User.findOne({ email });
-      if (user) {
-        return res.status(400).json({ msg: 'User already exists' });
-      }
-
-      // Tạo user mới
-      user = new User({ username, email, password, role: 'user' }); // 👈 gán role mặc định
-
-      // Mã hóa mật khẩu
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(password, salt);
-
-      await user.save();
-
-      // Tạo JWT token
-      const payload = { userId: user.id, role: user.role };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-      res.status(201).json({ token });
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).send('Server error');
-    }
-  });
-
+router.post('/register', authController.register);
 
 // POST /api/auth/login
-router.post('/login',
-  body('email').isEmail(),
-  body('password').exists(),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+router.post('/login', authController.login);
 
-    const { email, password } = req.body;
-
-    try {
-      const user = await User.findOne({ email });
-      if (!user) return res.status(400).json({ msg: 'Invalid credentials' });
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(400).json({ msg: 'Invalid credentials' });
-
-      const payload = { userId: user.id, role: user.role };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-      res.json({ token });
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).send('Server error');
-    }
-  });
-
-  // Cập nhật tên người dùng
+// Cập nhật tên người dùng
 router.put("/profile", authController.updateProfile);
 
 router.get('/me', auth, authController.getProfile);
 // Đổi mật khẩu
 router.put("/change-password", authController.changePassword);
+
+// Quản lý khách hàng (admin)
+const { getAllUsers, getUserById, updateUser, updateUserNote, updateUserStatus, updateUserType, addAddress, updateAddress, deleteAddress } = require("../controllers/auth.controller");
+
+router.get('/users', getAllUsers);
+router.get('/users/:id', getUserById);
+router.put('/users/:id', updateUser);
+router.put('/users/:id/note', updateUserNote);
+router.put('/users/:id/status', updateUserStatus);
+router.put('/users/:id/type', updateUserType);
+router.post('/users/:id/address', addAddress);
+router.put('/users/:id/address', updateAddress);
+router.delete('/users/:id/address', deleteAddress);
+
+// POST /api/auth/refresh-token
+router.post('/refresh-token', authController.refreshToken);
+
 module.exports = router;

@@ -1,29 +1,26 @@
 const express = require('express');
 const router = express.Router();
-const Order = require('../models/Order');
+const orderController = require('../controllers/order.controller');
 
-// GET đơn hàng theo userId
-router.get('/:userId', async (req, res) => {
-  try {
-    const cleanUserId = req.params.userId.trim();
-    const orders = await Order.find({ user: cleanUserId }).populate('products.product');
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server khi lấy đơn hàng', error: err });
-  }
-});
+// Lấy chi tiết đơn hàng theo id
+router.get('/detail/:orderId', orderController.getOrderById);
 
-// POST tạo đơn hàng mới
-router.post('/', async (req, res) => {
-  try {
-    const { user, products, totalPrice } = req.body;
-    const newOrder = new Order({ user, products, totalPrice });
-    const savedOrder = await newOrder.save();
-    res.status(201).json(savedOrder);
-  } catch (error) {
-    console.error('Lỗi khi tạo đơn hàng:', error);
-    res.status(500).json({ message: 'Tạo đơn hàng thất bại', error });
-  }
-});
+// Lấy tất cả đơn hàng (admin)
+router.get('/admin/all', orderController.getAllOrders);
+
+// Cập nhật trạng thái đơn hàng (admin)
+router.put('/admin/:orderId/status', orderController.updateOrderStatus);
+
+// Khách hàng hủy đơn hàng
+router.put('/:orderId/cancel', orderController.cancelOrder);
+
+// Lấy đơn hàng theo userId (khách hàng)
+router.get('/:userId', orderController.getOrdersByUser);
+
+// Tạo đơn hàng mới
+router.post('/', orderController.createOrder);
+
+// Khách hàng cập nhật thông tin nhận hàng
+router.put('/:orderId/update-info', orderController.updateOrderInfo);
 
 module.exports = router;

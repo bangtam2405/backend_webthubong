@@ -5,11 +5,36 @@ const productSchema = new mongoose.Schema({
   description: String,
   price: { type: Number, required: true },
   image: String,
-  rating: Number,
-  reviews: Number,
-  type: { type: String, required: true }, // 'teddy', 'accessory', 'collection', ...
-  // Thêm các trường đặc thù nếu cần
-  // ví dụ: size, color, v.v.
+  images: [{ type: String }],
+  rating: { type: Number, default: 0 },
+  reviews: { type: Number, default: 0 },
+  sold: { type: Number, default: 0 },
+  stock: { type: Number, default: 0 },
+  featured: { type: Boolean, default: false },
+  type: { 
+    type: String, 
+    required: true,
+    enum: ['teddy', 'accessory', 'collection', 'new', 'custom']
+  },
+  isCustom: { type: Boolean, default: false },
+  customData: {
+    parts: Object,
+    canvasJSON: Object
+  },
+  specifications: {
+    material: String,
+    size: String,
+    weight: String,
+    color: String,
+    body: String,
+    ears: String,
+    eyes: String,
+    nose: String,
+    mouth: String,
+    furColor: String,
+    clothing: String,
+    accessories: [String]
+  },
 }, { timestamps: true });
 
-module.exports = mongoose.model('Product', productSchema);
+module.exports = mongoose.model('Product', productSchema); 

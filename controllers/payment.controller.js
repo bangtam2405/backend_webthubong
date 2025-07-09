@@ -1,0 +1,183 @@
+const qs = require('qs');
+const crypto = require('crypto');
+const axios = require('axios');
+const Order = require('../models/Order');
+
+// VNPay
+exports.createVNPayUrl = async (req, res) => {
+  try {
+    const { amount, products, name, phone, address, user, returnUrl } = req.body;
+    // 1. Tạo đơn hàng trước
+    const order = new Order({
+      user,
+      products,
+      totalPrice: amount,
+      name,
+      phone,
+      address,
+      paymentMethod: 'VNPay', // Thêm phương thức thanh toán
+    });
+    await order.save();
+    const orderId = order._id.toString();
+
+    const tmnCode = process.env.VNP_TMNCODE;
+    const secretKey = process.env.VNP_HASHSECRET;
+    const vnpUrl = process.env.VNP_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
+
+    var ipAddr = req.headers['x-forwarded-for'] ||
+      req.connection.remoteAddress ||
+      req.socket.remoteAddress ||
+      req.connection.socket.remoteAddress;
+    if (ipAddr === '::1' || ipAddr === '::ffff:127.0.0.1') ipAddr = '127.0.0.1';
+
+    const date = new Date();
+    const createDate = date.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+    let vnp_Params = {
+      vnp_Version: '2.1.0',
+      vnp_Command: 'pay',
+      vnp_TmnCode: String(tmnCode),
+      vnp_Amount: String(amount * 100),
+      vnp_CurrCode: 'VND',
+      vnp_TxnRef: orderId, // Dùng orderId làm mã giao dịch
+      vnp_OrderInfo: `Thanh-toan-don-hang-${orderId}`,
+      vnp_OrderType: 'other',
+      vnp_Locale: 'vn',
+      vnp_ReturnUrl: String(returnUrl),
+      vnp_IpAddr: String(ipAddr),
+      vnp_CreateDate: String(createDate)
+    };
+
+    vnp_Params = sortObject(vnp_Params);
+    const signData = Object.keys(vnp_Params)
+        .map(key => `${key}=${encodeURIComponent(vnp_Params[key]).replace(/%20/g, '+')}`)
+        .join('&');
+    const hmac = crypto.createHmac('sha512', secretKey);
+    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
+    vnp_Params['vnp_SecureHash'] = signed;
+    const paymentUrl = vnpUrl + '?' + Object.keys(vnp_Params)
+        .map(key => `${key}=${encodeURIComponent(vnp_Params[key]).replace(/%20/g, '+')}`)
+        .join('&');
+    res.json({ paymentUrl });
+  } catch (err) {
+    console.error('VNPay error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// VNPay - Xử lý callback cập nhật trạng thái đơn hàng
+exports.vnpayReturn = async (req, res) => {
+  try {
+    let vnpParams = req.query;
+    let secureHash = vnpParams['vnp_SecureHash'];
+
+    delete vnpParams['vnp_SecureHash'];
+    delete vnpParams['vnp_SecureHashType'];
+
+    vnpParams = sortObject(vnpParams);
+
+    const secretKey = process.env.VNP_HASHSECRET;
+    const signData = Object.keys(vnpParams)
+      .map(key => `${key}=${encodeURIComponent(vnpParams[key] || '').replace(/%20/g, '+')}`)
+      .join('&');
+    const hmac = crypto.createHmac('sha512', secretKey);
+    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
+
+    if (secureHash !== signed) {
+      return res.json({ code: '97', message: 'Chữ ký không hợp lệ' });
+    }
+
+    const orderId = vnpParams['vnp_TxnRef'];
+    const rspCode = vnpParams['vnp_ResponseCode'];
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.json({ code: '01', message: 'Không tìm thấy đơn hàng' });
+    }
+
+    if (order.paymentStatus === 'success') {
+      return res.json({ code: '02', message: 'Đơn hàng đã được xác nhận trước đó' });
+    }
+
+    if (rspCode === '00') {
+      order.status = 'Đã xác nhận';
+      order.paymentStatus = 'success';
+      order.transactionId = vnpParams['vnp_TransactionNo'];
+      await order.save();
+      return res.json({ code: '00', message: 'Thanh toán thành công' });
+    } else {
+      order.paymentStatus = 'failed';
+      await order.save();
+      return res.json({ code: rspCode, message: 'Thanh toán thất bại' });
+    }
+  } catch (err) {
+    console.error('VNPay return error:', err);
+    res.status(500).json({ code: '99', message: 'Lỗi server khi xử lý phản hồi VNPay' });
+  }
+};
+
+// MoMo
+exports.createMoMoUrl = async (req, res) => {
+  const { amount, orderId, orderInfo, returnUrl, notifyUrl } = req.body;
+  const partnerCode = process.env.MOMO_PARTNER_CODE;
+  const accessKey = process.env.MOMO_ACCESS_KEY;
+  const secretKey = process.env.MOMO_SECRET_KEY;
+  const requestType = "captureWallet";
+
+  const rawSignature = `accessKey=${accessKey}&amount=${amount}&extraData=&ipnUrl=${notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${partnerCode}&redirectUrl=${returnUrl}&requestId=${orderId}&requestType=${requestType}`;
+  const signature = crypto.createHmac('sha256', secretKey).update(rawSignature).digest('hex');
+
+  const body = {
+    partnerCode,
+    accessKey,
+    requestId: orderId,
+    amount: `${amount}`,
+    orderId,
+    orderInfo,
+    redirectUrl: returnUrl,
+    ipnUrl: notifyUrl,
+    extraData: "",
+    requestType,
+    signature,
+    lang: "vi"
+  };
+
+  try {
+    const momoRes = await axios.post('https://test-payment.momo.vn/v2/gateway/api/create', body, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    res.json({ paymentUrl: momoRes.data.payUrl });
+  } catch (err) {
+    console.error('MoMo error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+};
+
+// MoMo IPN/Notify handler
+exports.momoNotify = (req, res) => {
+  const {
+    partnerCode, accessKey, requestId, amount, orderId, orderInfo, orderType, transId, resultCode, message, payType, responseTime, extraData, signature
+  } = req.body;
+  const secretKey = process.env.MOMO_SECRET_KEY;
+
+  // Tạo raw signature giống như MoMo docs
+  const rawSignature = `accessKey=${accessKey}&amount=${amount}&extraData=${extraData}&message=${message}&orderId=${orderId}&orderInfo=${orderInfo}&orderType=${orderType}&partnerCode=${partnerCode}&payType=${payType}&requestId=${requestId}&responseTime=${responseTime}&resultCode=${resultCode}&transId=${transId}`;
+  const expectedSignature = require('crypto').createHmac('sha256', secretKey).update(rawSignature).digest('hex');
+
+  if (signature === expectedSignature) {
+    // Xác thực thành công
+    // TODO: cập nhật trạng thái đơn hàng trong DB
+    console.log('MoMo IPN xác thực thành công:', req.body);
+    res.json({ resultCode: 0, message: 'Confirm Success' });
+  } else {
+    // Xác thực thất bại
+    console.log('MoMo IPN xác thực thất bại:', req.body);
+    res.json({ resultCode: 1, message: 'Confirm Fail' });
+  }
+}
+
+function sortObject(obj) {
+  const sorted = {};
+  Object.keys(obj).sort().forEach(key => { sorted[key] = obj[key]; });
+  return sorted;
+} 

@@ -9,9 +9,15 @@ router.get('/', productController.getAll);
 router.get('/:id', productController.getById);
 // Thêm sản phẩm mới (chỉ admin)
 router.post('/', auth, adminOnly, productController.create);
+// Thêm sản phẩm tùy chỉnh (user đã đăng nhập)
+router.post('/custom', auth, productController.create);
 // Sửa sản phẩm (chỉ admin)
 router.put('/:id', auth, adminOnly, productController.update);
 // Xóa sản phẩm (chỉ admin)
 router.delete('/:id', auth, adminOnly, productController.remove);
+
+// Cập nhật đánh giá và số lượng đã bán
+router.post('/:id/rating', productController.updateRating);
+router.post('/:id/sold', productController.updateSold);
 
 module.exports = router;
