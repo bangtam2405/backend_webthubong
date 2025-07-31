@@ -1,6 +1,7 @@
 const Order = require('../models/Order');
 const mongoose = require('mongoose');
 const Product = require('../models/Products');
+const Design = require('../models/Design');
 const Category = require('../models/Category');
 const Coupon = require('../models/Coupon');
 const { sendMail } = require('../mailer');
@@ -15,19 +16,30 @@ exports.createOrder = async (req, res) => {
     }
     // Kiểm tra tồn kho từng sản phẩm
     for (const item of products) {
-      const product = await Product.findById(item.product);
+      // Tìm trong cả Product và Design collections
+      let product = await Product.findById(item.product);
+      let isDesign = false;
+      
+      if (!product) {
+        // Nếu không tìm thấy trong Product, thử tìm trong Design
+        product = await Design.findById(item.product);
+        isDesign = true;
+      }
+      
       if (!product) {
         return res.status(400).json({ message: `Không tìm thấy sản phẩm với id ${item.product}` });
       }
-      if (product.stock < item.quantity) {
-        return res.status(400).json({ message: `Sản phẩm '${product.name}' không đủ hàng trong kho` });
+      
+      // Chỉ kiểm tra stock cho sản phẩm thường, không phải design
+      if (!isDesign && product.stock < item.quantity) {
+        return res.status(400).json({ message: `Sản phẩm '${product.name || product.designName}' không đủ hàng trong kho` });
       }
     }
-    // Kiểm tra tồn kho category nhỏ nhất nếu có
+    // Kiểm tra tồn kho category nhỏ nhất nếu có (chỉ cho sản phẩm thường)
     for (const item of products) {
       const product = await Product.findById(item.product);
-      // Giả sử product có trường categoryId là id của category nhỏ nhất (nếu có)
-      if (product.categoryId) {
+      // Chỉ kiểm tra category cho sản phẩm thường, không phải design
+      if (product && product.categoryId) {
         const category = await Category.findById(product.categoryId);
         if (category && category.quantity !== undefined) {
           if (category.quantity < item.quantity) {
@@ -36,14 +48,18 @@ exports.createOrder = async (req, res) => {
         }
       }
     }
-    // Trừ kho sản phẩm và category nhỏ nhất
+    // Trừ kho sản phẩm và category nhỏ nhất (chỉ cho sản phẩm thường)
     for (const item of products) {
-      await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity, sold: item.quantity } });
-      // Trừ kho category nhỏ nhất nếu có
       const product = await Product.findById(item.product);
-      if (product.categoryId) {
-        await Category.findByIdAndUpdate(product.categoryId, { $inc: { quantity: -item.quantity } });
+      if (product) {
+        // Chỉ trừ kho cho sản phẩm thường
+        await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity, sold: item.quantity } });
+        // Trừ kho category nhỏ nhất nếu có
+        if (product.categoryId) {
+          await Category.findByIdAndUpdate(product.categoryId, { $inc: { quantity: -item.quantity } });
+        }
       }
+      // Design không cần trừ kho vì được làm theo đơn hàng
     }
     const order = new Order({ user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount });
     await order.save();
@@ -87,7 +103,21 @@ exports.createOrder = async (req, res) => {
 exports.getOrdersByUser = async (req, res) => {
   try {
     const userId = req.params.userId;
-    const orders = await Order.find({ user: userId }).sort({ createdAt: -1 }).populate('products.product');
+    const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
+    
+    // Populate products manually để hỗ trợ cả Product và Design
+    for (let order of orders) {
+      for (let productItem of order.products) {
+        // Thử populate từ Product trước
+        let product = await Product.findById(productItem.product);
+        if (!product) {
+          // Nếu không tìm thấy, thử từ Design
+          product = await Design.findById(productItem.product);
+        }
+        productItem.product = product;
+      }
+    }
+    
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy đơn hàng' });
@@ -145,7 +175,21 @@ exports.updateOrderStatus = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate('products.product').populate('user', 'username email');
+    const orders = await Order.find().populate('user', 'username email');
+    
+    // Populate products manually để hỗ trợ cả Product và Design
+    for (let order of orders) {
+      for (let productItem of order.products) {
+        // Thử populate từ Product trước
+        let product = await Product.findById(productItem.product);
+        if (!product) {
+          // Nếu không tìm thấy, thử từ Design
+          product = await Design.findById(productItem.product);
+        }
+        productItem.product = product;
+      }
+    }
+    
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy danh sách đơn hàng' });
@@ -155,10 +199,20 @@ exports.getAllOrders = async (req, res) => {
 exports.getOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findById(orderId)
-      .populate('products.product')
-      .populate('user');
+    const order = await Order.findById(orderId).populate('user');
     if (!order) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    
+    // Populate products manually để hỗ trợ cả Product và Design
+    for (let productItem of order.products) {
+      // Thử populate từ Product trước
+      let product = await Product.findById(productItem.product);
+      if (!product) {
+        // Nếu không tìm thấy, thử từ Design
+        product = await Design.findById(productItem.product);
+      }
+      productItem.product = product;
+    }
+    
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy chi tiết đơn hàng' });
