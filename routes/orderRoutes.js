@@ -23,4 +23,7 @@ router.post('/', orderController.createOrder);
 // Khách hàng cập nhật thông tin nhận hàng
 router.put('/:orderId/update-info', orderController.updateOrderInfo);
 
+// Xóa đơn hàng (admin)
+router.delete('/admin/:orderId', orderController.deleteOrder);
+
 module.exports = router;

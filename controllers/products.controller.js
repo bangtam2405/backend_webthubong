@@ -5,7 +5,28 @@ exports.getAll = async (req, res) => {
   try {
     const filter = {};
     if (req.query.type) filter.type = req.query.type;
-    const products = await Product.find(filter);
+    let sort = {};
+    // Hỗ trợ sort theo query
+    switch (req.query.sort) {
+      case 'price_asc':
+        sort = { price: 1 };
+        break;
+      case 'price_desc':
+        sort = { price: -1 };
+        break;
+      case 'rating_desc':
+        sort = { rating: -1 };
+        break;
+      case 'sold_desc':
+        sort = { sold: -1 };
+        break;
+      case 'newest':
+        sort = { createdAt: -1 };
+        break;
+      default:
+        sort = {};
+    }
+    const products = await Product.find(filter).sort(sort);
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -162,5 +183,27 @@ exports.updateSold = async (req, res) => {
     res.json(updatedProduct);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+};
+
+// Lấy sản phẩm bán chạy nhất
+exports.getBestSeller = async (req, res) => {
+  try {
+    const product = await Product.findOne().sort({ sold: -1 }).limit(1);
+    if (!product) return res.status(404).json({ error: 'Không tìm thấy sản phẩm bán chạy' });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Lấy sản phẩm được đánh giá cao nhất
+exports.getTopRated = async (req, res) => {
+  try {
+    const product = await Product.findOne().sort({ rating: -1, reviews: -1 }).limit(1);
+    if (!product) return res.status(404).json({ error: 'Không tìm thấy sản phẩm đánh giá cao' });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 }; 

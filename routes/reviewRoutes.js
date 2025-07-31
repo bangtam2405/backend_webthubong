@@ -12,4 +12,7 @@ router.get('/product/:productId', reviewController.getReviewsByProduct);
 // Lấy tất cả đánh giá của người dùng hiện tại
 router.get('/user', auth, reviewController.getReviewsByUser);
 
+// Thêm route lấy tất cả review, có filter rating, limit
+router.get('/', require('../controllers/review.controller').getAllReviews);
+
 module.exports = router; 

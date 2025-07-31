@@ -53,6 +53,7 @@ const userSchema = new mongoose.Schema({
   },
   refreshToken: { type: String, default: '' },
   gender: { type: String, enum: ['male', 'female', 'other'], default: 'other' },
+  avatar: { type: String, default: '' }, // Thêm trường avatar
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

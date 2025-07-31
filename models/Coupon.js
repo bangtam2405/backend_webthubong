@@ -9,6 +9,11 @@ const couponSchema = new Schema({
     uppercase: true,
     trim: true,
   },
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    default: null, // null là mã global, có userId là mã cá nhân hóa
+  },
   type: {
     type: String,
     required: true,

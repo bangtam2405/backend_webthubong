@@ -1,6 +1,8 @@
 const User = require("../models/User.js");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const Coupon = require("../models/Coupon.js");
+const { sendMail } = require("../mailer.js");
 
 exports.register = async (req, res) => {
   const { username, email, password, fullName, phone, dob, gender, address } = req.body;
@@ -24,6 +26,34 @@ exports.register = async (req, res) => {
       gender: gender || 'other',
       addresses: address ? [{ label: 'Nhà riêng', address, isDefault: true }] : []
     });
+    // Tạo mã giảm giá tự động cho user mới
+    const code = `WELCOME${Math.floor(1000 + Math.random() * 9000)}`;
+    const coupon = new Coupon({
+      code,
+      type: 'percentage',
+      value: 10, // 10% giảm giá
+      minOrderAmount: 0,
+      usageLimit: 1,
+      validFrom: new Date(),
+      validUntil: new Date(Date.now() + 7*24*60*60*1000), // Hạn dùng 7 ngày
+      isActive: true,
+      userId: newUser._id,
+    });
+    await coupon.save();
+    // Gửi email chào mừng kèm mã giảm giá
+    const html = `<h2>Chào mừng bạn đến với Gấu Xinh!</h2>
+      <p>Cảm ơn bạn đã đăng ký tài khoản. Dưới đây là mã giảm giá dành riêng cho bạn:</p>
+      <div style="font-size:1.5em;font-weight:bold;color:#e3497a;margin:16px 0">${code}</div>
+      <ul>
+        <li>Giảm 10% cho đơn hàng đầu tiên</li>
+        <li>Chỉ dùng 1 lần, hạn dùng 7 ngày</li>
+      </ul>
+      <p>Chúc bạn mua sắm vui vẻ tại Gấu Xinh!</p>`;
+    try {
+      await sendMail(email, "Chào mừng đến Gấu Xinh - Nhận mã giảm giá 10%", html);
+    } catch (e) {
+      console.error('Lỗi gửi email welcome coupon:', e.message);
+    }
     res.status(201).json({ message: "Tạo tài khoản thành công", userId: newUser._id });
   } catch (err) {
     console.error('Lỗi đăng ký:', err.message, err);
@@ -34,9 +64,17 @@ exports.register = async (req, res) => {
 //Cap nhat Profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { userId, username } = req.body;
+    const { userId, username, avatar, email, fullName, phone, dob, gender, address } = req.body;
     if (!userId || !username) return res.status(400).json({ success: false, error: "Thiếu userId hoặc username" });
-    const user = await User.findByIdAndUpdate(userId, { username }, { new: true });
+    const updateFields = { username };
+    if (avatar !== undefined) updateFields.avatar = avatar;
+    if (email !== undefined) updateFields.email = email;
+    if (fullName !== undefined) updateFields.fullName = fullName;
+    if (phone !== undefined) updateFields.phone = phone;
+    if (dob !== undefined) updateFields.dob = dob;
+    if (gender !== undefined) updateFields.gender = gender;
+    if (address !== undefined) updateFields["addresses.0.address"] = address; // cập nhật địa chỉ mặc định
+    const user = await User.findByIdAndUpdate(userId, updateFields, { new: true });
     if (!user) return res.status(404).json({ success: false, error: "Không tìm thấy user" });
     res.json({ success: true, user });
   } catch (err) {
@@ -56,7 +94,8 @@ exports.changePassword = async (req, res) => {
     if (!userId || !newPassword) return res.status(400).json({ success: false, error: "Thiếu userId hoặc mật khẩu mới" });
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, error: "Không tìm thấy user" });
-    user.password = newPassword; // Nếu bạn dùng bcrypt, nhớ hash lại ở đây!
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
     await user.save();
     res.json({ success: true });
   } catch (err) {
@@ -66,21 +105,19 @@ exports.changePassword = async (req, res) => {
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
-  console.log('Đăng nhập:', email, password);
   try {
     const user = await User.findOne({ email });
-    console.log('User tìm được:', user);
     if (!user) return res.status(400).json({ message: "Email không đúng" });
+    if (user.status === 'locked') return res.status(403).json({ message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin để được hỗ trợ." });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log('So sánh mật khẩu:', isMatch);
     if (!isMatch) return res.status(400).json({ message: "Mật khẩu sai" });
 
     // Tạo access token (ngắn hạn)
     const accessToken = jwt.sign(
       { userId: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "7d" }
     );
     // Tạo refresh token (dài hạn)
     const refreshToken = jwt.sign(
@@ -214,5 +251,15 @@ exports.deleteAddress = async (req, res) => {
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi xóa địa chỉ' });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi xóa khách hàng' });
   }
 };

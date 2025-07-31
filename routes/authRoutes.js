@@ -33,6 +33,7 @@ router.put('/users/:id/type', updateUserType);
 router.post('/users/:id/address', addAddress);
 router.put('/users/:id/address', updateAddress);
 router.delete('/users/:id/address', deleteAddress);
+router.delete('/users/:id', authController.deleteUser);
 
 // POST /api/auth/refresh-token
 router.post('/refresh-token', authController.refreshToken);

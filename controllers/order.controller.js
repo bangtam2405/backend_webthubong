@@ -2,10 +2,13 @@ const Order = require('../models/Order');
 const mongoose = require('mongoose');
 const Product = require('../models/Products');
 const Category = require('../models/Category');
+const Coupon = require('../models/Coupon');
+const { sendMail } = require('../mailer');
+const User = require('../models/User');
 
 exports.createOrder = async (req, res) => {
   try {
-    let { user, products, totalPrice, name, phone, address } = req.body;
+    let { user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount } = req.body;
     // Ép userId về ObjectId nếu là string
     if (user && typeof user === "string" && mongoose.Types.ObjectId.isValid(user)) {
       user = new mongoose.Types.ObjectId(user);
@@ -42,8 +45,39 @@ exports.createOrder = async (req, res) => {
         await Category.findByIdAndUpdate(product.categoryId, { $inc: { quantity: -item.quantity } });
       }
     }
-    const order = new Order({ user, products, totalPrice, name, phone, address });
+    const order = new Order({ user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount });
     await order.save();
+    // Nếu đơn hàng đủ điều kiện, tặng mã giảm giá cho user
+    if (user && totalPrice >= 300000) {
+      const code = `THANKS${Math.floor(1000 + Math.random() * 9000)}`;
+      const coupon = new Coupon({
+        code,
+        type: 'percentage',
+        value: 10, // 10% giảm giá
+        minOrderAmount: 0,
+        usageLimit: 1,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 14*24*60*60*1000), // Hạn dùng 14 ngày
+        isActive: true,
+        userId: user,
+      });
+      await coupon.save();
+      // Gửi email nếu user có email
+      try {
+        const userObj = await require('../models/User').findById(user);
+        if (userObj && userObj.email) {
+          const html = `<h2>Cảm ơn bạn đã mua hàng tại Gấu Xinh!</h2>
+            <p>Đơn hàng của bạn đã thành công. Dưới đây là mã giảm giá dành riêng cho bạn:</p>
+            <div style="font-size:1.5em;font-weight:bold;color:#e3497a;margin:16px 0">${code}</div>
+            <ul>
+              <li>Giảm 10% cho đơn hàng tiếp theo</li>
+              <li>Chỉ dùng 1 lần, hạn dùng 14 ngày</li>
+            </ul>
+            <p>Chúc bạn mua sắm vui vẻ tại Gấu Xinh!</p>`;
+          await sendMail(userObj.email, "Cảm ơn bạn - Nhận mã giảm giá cho đơn tiếp theo", html);
+        }
+      } catch (e) { console.error('Lỗi gửi email coupon order:', e.message); }
+    }
     res.status(201).json(order);
   } catch (error) {
     res.status(400).json({ message: 'Lỗi khi tạo đơn hàng' });
@@ -53,7 +87,7 @@ exports.createOrder = async (req, res) => {
 exports.getOrdersByUser = async (req, res) => {
   try {
     const userId = req.params.userId;
-    const orders = await Order.find({ user: userId }).populate('products.product');
+    const orders = await Order.find({ user: userId }).sort({ createdAt: -1 }).populate('products.product');
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy đơn hàng' });
@@ -81,6 +115,28 @@ exports.updateOrderStatus = async (req, res) => {
       { new: true }
     );
     if (!order) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+
+    // --- Tự động nâng hạng user khi đơn hàng chuyển sang 'Đã giao hàng' ---
+    if (status === 'Đã giao hàng' && order.user) {
+      const user = await User.findById(order.user);
+      if (user) {
+        const orders = await Order.find({ user: user._id, status: 'Đã giao hàng' });
+        const totalOrders = orders.length;
+        const totalSpent = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
+        let newType = 'new';
+        if (totalSpent >= 10000000 || totalOrders >= 20) {
+          newType = 'vip';
+        } else if (totalSpent >= 2000000 || totalOrders >= 5) {
+          newType = 'regular';
+        }
+        if (user.type !== newType) {
+          user.type = newType;
+          await user.save();
+        }
+      }
+    }
+    // --- END tự động nâng hạng ---
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái đơn hàng' });
@@ -89,7 +145,7 @@ exports.updateOrderStatus = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate('products.product').populate('user');
+    const orders = await Order.find().populate('products.product').populate('user', 'username email');
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy danh sách đơn hàng' });
@@ -144,5 +200,16 @@ exports.updateOrderInfo = async (req, res) => {
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi cập nhật thông tin đơn hàng' });
+  }
+};
+
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const deleted = await Order.findByIdAndDelete(orderId);
+    if (!deleted) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi xóa đơn hàng' });
   }
 };

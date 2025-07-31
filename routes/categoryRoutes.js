@@ -24,8 +24,21 @@ router.get('/:id', async (req, res) => {
 
 // Thêm danh mục mới
 router.post('/', async (req, res) => {
-  const { name, parent, type, image, price } = req.body;
-  const category = new Category({ name, parent, type, image, price });
+  const { name, parent, type, image, price, quantity } = req.body;
+  const imported = quantity ? Number(quantity) : 0;
+  const sold = 0;
+  const stock = imported - sold;
+  
+  const category = new Category({ 
+    name, 
+    parent, 
+    type, 
+    image, 
+    price,
+    imported,
+    sold,
+    stock
+  });
   await category.save();
   res.json(category);
 });
@@ -33,11 +46,13 @@ router.post('/', async (req, res) => {
 // Sửa danh mục (PUT)
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, parent, type, image, price } = req.body;
+  const { name, parent, type, image, price, imported, sold } = req.body;
+  const stock = (imported || 0) - (sold || 0);
+  
   try {
     const updated = await Category.findByIdAndUpdate(
       id,
-      { name, parent, type, image, price },
+      { name, parent, type, image, price, imported, sold, stock },
       { new: true }
     );
     if (!updated) return res.status(404).json({ error: 'Không tìm thấy danh mục' });

@@ -14,13 +14,14 @@ const productSchema = new mongoose.Schema({
   type: { 
     type: String, 
     required: true,
-    enum: ['teddy', 'accessory', 'collection', 'new', 'custom']
+    enum: ['teddy', 'accessory', 'collection', 'new', 'custom', 'giftbox']
   },
   isCustom: { type: Boolean, default: false },
   customData: {
     parts: Object,
     canvasJSON: Object
   },
+  customizeLink: String, // Link mẫu thiết kế
   specifications: {
     material: String,
     size: String,

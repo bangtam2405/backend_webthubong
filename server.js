@@ -89,6 +89,21 @@ mongoose.connect(process.env.MONGO_URI)
     const giftboxRoutes = require('./routes/giftboxRoutes');
     app.use('/api/giftboxes', giftboxRoutes);
 
+    const aiChatRoute = require('./routes/aiChat');
+    app.use('/api/ai-chat', aiChatRoute);
+
+    // Route coupon
+    const couponRoutes = require('./routes/couponRoutes');
+    app.use('/api/coupons', couponRoutes);
+
+    // Route banner
+    const bannerRoutes = require('./routes/bannerRoutes');
+    app.use('/api/banner', bannerRoutes);
+
+    // Route product categories
+    const productCategoryRoutes = require('./routes/productCategoryRoutes');
+    app.use('/api/product-categories', productCategoryRoutes);
+
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })

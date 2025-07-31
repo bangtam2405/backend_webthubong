@@ -61,6 +61,8 @@ const orderSchema = new Schema({
   transactionId: {
     type: String
   },
+  coupon: { type: String },
+  discountAmount: { type: Number, default: 0 },
   cancelReason: {
     type: String,
     default: ''

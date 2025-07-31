@@ -48,6 +48,17 @@ exports.getCouponByCode = async (req, res) => {
   }
 };
 
+// Lấy mã giảm giá của user (cá nhân hóa + global)
+exports.getCouponsByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const coupons = await Coupon.find({ $or: [ { userId }, { userId: null } ] });
+    res.status(200).json(coupons);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi lấy mã giảm giá của user', error: error.message });
+  }
+};
+
 // Cập nhật mã giảm giá (chỉ admin)
 exports.updateCoupon = async (req, res) => {
   try {

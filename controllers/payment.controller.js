@@ -30,8 +30,9 @@ exports.createVNPayUrl = async (req, res) => {
       req.connection.socket.remoteAddress;
     if (ipAddr === '::1' || ipAddr === '::ffff:127.0.0.1') ipAddr = '127.0.0.1';
 
-    const date = new Date();
-    const createDate = date.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    const now = new Date();
+    const createDate = formatVNPayDate(now);
+    const expireDate = formatVNPayDate(new Date(now.getTime() + 15 * 60000));
 
     let vnp_Params = {
       vnp_Version: '2.1.0',
@@ -45,7 +46,8 @@ exports.createVNPayUrl = async (req, res) => {
       vnp_Locale: 'vn',
       vnp_ReturnUrl: String(returnUrl),
       vnp_IpAddr: String(ipAddr),
-      vnp_CreateDate: String(createDate)
+      vnp_CreateDate: String(createDate),
+      vnp_ExpireDate: String(expireDate),
     };
 
     vnp_Params = sortObject(vnp_Params);
@@ -180,4 +182,17 @@ function sortObject(obj) {
   const sorted = {};
   Object.keys(obj).sort().forEach(key => { sorted[key] = obj[key]; });
   return sorted;
+}
+
+// Hàm format ngày theo chuẩn VNPay (GMT+7)
+function formatVNPayDate(date) {
+  const tzOffset = 7 * 60; // phút
+  const local = new Date(date.getTime() + tzOffset * 60000);
+  const yyyy = local.getFullYear();
+  const MM = String(local.getMonth() + 1).padStart(2, '0');
+  const dd = String(local.getDate()).padStart(2, '0');
+  const HH = String(local.getHours()).padStart(2, '0');
+  const mm = String(local.getMinutes()).padStart(2, '0');
+  const ss = String(local.getSeconds()).padStart(2, '0');
+  return `${yyyy}${MM}${dd}${HH}${mm}${ss}`;
 } 

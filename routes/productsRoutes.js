@@ -20,4 +20,9 @@ router.delete('/:id', auth, adminOnly, productController.remove);
 router.post('/:id/rating', productController.updateRating);
 router.post('/:id/sold', productController.updateSold);
 
+// Lấy sản phẩm bán chạy nhất
+router.get('/best-seller', productController.getBestSeller);
+// Lấy sản phẩm được đánh giá cao nhất
+router.get('/top-rated', productController.getTopRated);
+
 module.exports = router;
