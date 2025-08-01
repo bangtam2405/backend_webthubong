@@ -16,6 +16,14 @@ exports.createOrder = async (req, res) => {
     }
     // Kiểm tra tồn kho từng sản phẩm
     for (const item of products) {
+      console.log('Checking stock for product:', item.product);
+      
+      // Kiểm tra xem _id có phải là ObjectId hợp lệ không
+      if (!mongoose.Types.ObjectId.isValid(item.product)) {
+        console.log('Invalid ObjectId, skipping stock check (likely custom design)');
+        continue;
+      }
+      
       // Tìm trong cả Product và Design collections
       let product = await Product.findById(item.product);
       let isDesign = false;
@@ -26,8 +34,10 @@ exports.createOrder = async (req, res) => {
         isDesign = true;
       }
       
+      // Nếu vẫn không tìm thấy, có thể là design tạm thời - bỏ qua kiểm tra stock
       if (!product) {
-        return res.status(400).json({ message: `Không tìm thấy sản phẩm với id ${item.product}` });
+        console.log('Product not found in database, skipping stock check (likely custom design)');
+        continue;
       }
       
       // Chỉ kiểm tra stock cho sản phẩm thường, không phải design
@@ -37,32 +47,118 @@ exports.createOrder = async (req, res) => {
     }
     // Kiểm tra tồn kho category nhỏ nhất nếu có (chỉ cho sản phẩm thường)
     for (const item of products) {
-      const product = await Product.findById(item.product);
-      // Chỉ kiểm tra category cho sản phẩm thường, không phải design
-      if (product && product.categoryId) {
-        const category = await Category.findById(product.categoryId);
-        if (category && category.quantity !== undefined) {
-          if (category.quantity < item.quantity) {
-            return res.status(400).json({ message: `Danh mục '${category.name}' không đủ hàng trong kho` });
+      // Chỉ kiểm tra nếu _id hợp lệ
+      if (mongoose.Types.ObjectId.isValid(item.product)) {
+        const product = await Product.findById(item.product);
+        // Chỉ kiểm tra category cho sản phẩm thường, không phải design
+        if (product && product.categoryId) {
+          const category = await Category.findById(product.categoryId);
+          if (category && category.quantity !== undefined) {
+            if (category.quantity < item.quantity) {
+              return res.status(400).json({ message: `Danh mục '${category.name}' không đủ hàng trong kho` });
+            }
           }
         }
       }
     }
     // Trừ kho sản phẩm và category nhỏ nhất (chỉ cho sản phẩm thường)
     for (const item of products) {
-      const product = await Product.findById(item.product);
-      if (product) {
-        // Chỉ trừ kho cho sản phẩm thường
-        await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity, sold: item.quantity } });
-        // Trừ kho category nhỏ nhất nếu có
-        if (product.categoryId) {
-          await Category.findByIdAndUpdate(product.categoryId, { $inc: { quantity: -item.quantity } });
+      // Chỉ trừ kho nếu _id hợp lệ
+      if (mongoose.Types.ObjectId.isValid(item.product)) {
+        const product = await Product.findById(item.product);
+        if (product) {
+          // Chỉ trừ kho cho sản phẩm thường
+          await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity, sold: item.quantity } });
+          // Trừ kho category nhỏ nhất nếu có
+          if (product.categoryId) {
+            await Category.findByIdAndUpdate(product.categoryId, { $inc: { quantity: -item.quantity } });
+          }
         }
       }
       // Design không cần trừ kho vì được làm theo đơn hàng
     }
-    const order = new Order({ user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount });
+    // Thêm thông tin sản phẩm đầy đủ vào products
+    const productsWithInfo = await Promise.all(products.map(async (item) => {
+      // Kiểm tra xem _id có phải là ObjectId hợp lệ không
+      if (!mongoose.Types.ObjectId.isValid(item.product)) {
+                 // Custom design - sử dụng ảnh mặc định
+         const productInfo = {
+           _id: item.product,
+           name: item.name || 'Sản phẩm tùy chỉnh',
+           designName: item.designName || null,
+           description: item.description || '',
+           price: item.price || 0,
+           image: '/dethuong.jpg',
+           previewImage: '/dethuong.jpg',
+           type: 'custom'
+         };
+        return {
+          ...item,
+          productInfo
+        };
+      }
+      
+      let product = await Product.findById(item.product);
+      let isDesign = false;
+      
+      if (!product) {
+        product = await Design.findById(item.product);
+        isDesign = true;
+      }
+      
+             // Nếu vẫn không tìm thấy, có thể là design tạm thời từ giỏ hàng
+       if (!product) {
+         const productInfo = {
+           _id: item.product,
+           name: item.name || 'Sản phẩm tùy chỉnh',
+           designName: item.designName || null,
+           description: item.description || '',
+           price: item.price || 0,
+           image: '/dethuong.jpg',
+           previewImage: '/dethuong.jpg',
+           type: 'custom'
+         };
+        return {
+          ...item,
+          productInfo
+        };
+      }
+      
+      // Sản phẩm bình thường hoặc design từ database
+      const productInfo = {
+        _id: product?._id?.toString() || item.product,
+        name: product?.name || product?.designName || 'Sản phẩm không xác định',
+        designName: product?.designName || null,
+        description: product?.description || '',
+        price: product?.price || 0,
+        image: product?.image || product?.previewImage || '/placeholder.jpg',
+        previewImage: product?.previewImage || product?.image || '/placeholder.jpg',
+        type: product?.type || (isDesign ? 'design' : 'product')
+      };
+      
+      return {
+        ...item,
+        productInfo
+      };
+    }));
+
+    const order = new Order({ user, products: productsWithInfo, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount });
     await order.save();
+    
+    // Cập nhật số lần sử dụng của mã giảm giá nếu có
+    if (coupon) {
+      try {
+        // Đảm bảo coupon là ObjectId hợp lệ
+        if (mongoose.Types.ObjectId.isValid(coupon)) {
+          await Coupon.findByIdAndUpdate(coupon, { $inc: { usedCount: 1 } });
+          console.log('Đã cập nhật usedCount cho coupon:', coupon);
+        } else {
+          console.log('Coupon ID không hợp lệ:', coupon);
+        }
+      } catch (error) {
+        console.error('Lỗi khi cập nhật usedCount:', error);
+      }
+    }
     // Nếu đơn hàng đủ điều kiện, tặng mã giảm giá cho user
     if (user && totalPrice >= 300000) {
       const code = `THANKS${Math.floor(1000 + Math.random() * 9000)}`;
@@ -96,7 +192,8 @@ exports.createOrder = async (req, res) => {
     }
     res.status(201).json(order);
   } catch (error) {
-    res.status(400).json({ message: 'Lỗi khi tạo đơn hàng' });
+    console.error('Error creating order:', error);
+    res.status(400).json({ message: 'Lỗi khi tạo đơn hàng: ' + error.message });
   }
 };
 
@@ -105,21 +202,65 @@ exports.getOrdersByUser = async (req, res) => {
     const userId = req.params.userId;
     const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
     
-    // Populate products manually để hỗ trợ cả Product và Design
+    // Sử dụng productInfo nếu có, nếu không thì populate như cũ
     for (let order of orders) {
       for (let productItem of order.products) {
-        // Thử populate từ Product trước
-        let product = await Product.findById(productItem.product);
-        if (!product) {
-          // Nếu không tìm thấy, thử từ Design
-          product = await Design.findById(productItem.product);
+        if (productItem.productInfo) {
+          // Sử dụng thông tin đã lưu sẵn
+          productItem.product = productItem.productInfo;
+        } else {
+          // Fallback: populate như cũ cho đơn hàng cũ
+          if (productItem.product && mongoose.Types.ObjectId.isValid(productItem.product)) {
+            let product = await Product.findById(productItem.product);
+            if (!product) {
+              product = await Design.findById(productItem.product);
+            }
+            
+            // Đảm bảo product có image
+            if (product) {
+              // Nếu không có image, thử dùng images[0]
+              if (!product.image && product.images && product.images.length > 0) {
+                product.image = product.images[0];
+              }
+              // Nếu vẫn không có image, dùng placeholder
+              if (!product.image) {
+                product.image = '/placeholder.jpg';
+              }
+              
+              productItem.product = product;
+            } else {
+              // Nếu không tìm thấy sản phẩm trong database, tạo fallback
+              productItem.product = {
+                _id: productItem.product,
+                name: 'Sản phẩm không còn tồn tại',
+                designName: null,
+                description: 'Sản phẩm này có thể đã bị xóa hoặc không còn khả dụng',
+                price: 0,
+                image: '/placeholder.jpg',
+                previewImage: '/placeholder.jpg',
+                type: 'deleted'
+              };
+            }
+          } else {
+            // Nếu product không phải ObjectId hợp lệ, có thể là custom design
+            productItem.product = {
+              _id: productItem.product,
+              name: 'Sản phẩm tùy chỉnh',
+              designName: null,
+              description: '',
+              price: 0,
+              image: '/dethuong.jpg',
+              previewImage: '/dethuong.jpg',
+              type: 'custom'
+            };
+          }
         }
-        productItem.product = product;
       }
     }
     
     res.json(orders);
   } catch (error) {
+    console.error('Error in getOrdersByUser:', error);
     res.status(500).json({ message: 'Lỗi khi lấy đơn hàng' });
   }
 };
@@ -175,23 +316,108 @@ exports.updateOrderStatus = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate('user', 'username email');
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
     
-    // Populate products manually để hỗ trợ cả Product và Design
+    const orders = await Order.find()
+      .populate('user', 'username email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    // Thu thập tất cả product IDs để query một lần
+    const productIds = [];
+    const designIds = [];
+    
     for (let order of orders) {
       for (let productItem of order.products) {
-        // Thử populate từ Product trước
-        let product = await Product.findById(productItem.product);
-        if (!product) {
-          // Nếu không tìm thấy, thử từ Design
-          product = await Design.findById(productItem.product);
+        if (!productItem.productInfo && productItem.product && mongoose.Types.ObjectId.isValid(productItem.product)) {
+          productIds.push(productItem.product);
         }
-        productItem.product = product;
       }
     }
     
-    res.json(orders);
+    // Query tất cả products và designs một lần
+    const products = await Product.find({ _id: { $in: productIds } });
+    const designs = await Design.find({ _id: { $in: productIds } });
+    
+    // Tạo map để lookup nhanh
+    const productMap = new Map();
+    const designMap = new Map();
+    
+    products.forEach(product => {
+      productMap.set(product._id.toString(), product);
+    });
+    
+    designs.forEach(design => {
+      designMap.set(design._id.toString(), design);
+    });
+    
+    // Xử lý orders
+    for (let order of orders) {
+      for (let productItem of order.products) {
+        if (productItem.productInfo) {
+          productItem.product = productItem.productInfo;
+        } else {
+          if (productItem.product && mongoose.Types.ObjectId.isValid(productItem.product)) {
+            let product = productMap.get(productItem.product.toString()) || designMap.get(productItem.product.toString());
+            
+            // Đảm bảo product có image
+            if (product) {
+              // Nếu không có image, thử dùng images[0]
+              if (!product.image && product.images && product.images.length > 0) {
+                product.image = product.images[0];
+              }
+              // Nếu vẫn không có image, dùng placeholder
+              if (!product.image) {
+                product.image = '/placeholder.jpg';
+              }
+              
+              productItem.product = product;
+            } else {
+              // Nếu không tìm thấy sản phẩm trong database, tạo fallback
+              productItem.product = {
+                _id: productItem.product,
+                name: 'Sản phẩm không còn tồn tại',
+                designName: null,
+                description: 'Sản phẩm này có thể đã bị xóa hoặc không còn khả dụng',
+                price: 0,
+                image: '/placeholder.jpg',
+                previewImage: '/placeholder.jpg',
+                type: 'deleted'
+              };
+            }
+          } else {
+            // Nếu product không phải ObjectId hợp lệ, có thể là custom design
+            productItem.product = {
+              _id: productItem.product,
+              name: 'Sản phẩm tùy chỉnh',
+              designName: null,
+              description: '',
+              price: 0,
+              image: '/dethuong.jpg',
+              previewImage: '/dethuong.jpg',
+              type: 'custom'
+            };
+          }
+        }
+      }
+    }
+    
+    // Lấy tổng số đơn hàng cho pagination
+    const totalOrders = await Order.countDocuments();
+    const totalPages = Math.ceil(totalOrders / limit);
+    
+    res.json({
+      orders,
+      totalOrders,
+      totalPages,
+      currentPage: page,
+      limit
+    });
   } catch (error) {
+    console.error('Error in getAllOrders:', error);
     res.status(500).json({ message: 'Lỗi khi lấy danh sách đơn hàng' });
   }
 };
@@ -202,15 +428,56 @@ exports.getOrderById = async (req, res) => {
     const order = await Order.findById(orderId).populate('user');
     if (!order) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     
-    // Populate products manually để hỗ trợ cả Product và Design
+    // Sử dụng productInfo nếu có, nếu không thì populate như cũ
     for (let productItem of order.products) {
-      // Thử populate từ Product trước
-      let product = await Product.findById(productItem.product);
-      if (!product) {
-        // Nếu không tìm thấy, thử từ Design
-        product = await Design.findById(productItem.product);
+      if (productItem.productInfo) {
+        productItem.product = productItem.productInfo;
+      } else {
+        if (productItem.product && mongoose.Types.ObjectId.isValid(productItem.product)) {
+          let product = await Product.findById(productItem.product);
+          if (!product) {
+            product = await Design.findById(productItem.product);
+          }
+          
+          // Đảm bảo product có image
+          if (product) {
+            // Nếu không có image, thử dùng images[0]
+            if (!product.image && product.images && product.images.length > 0) {
+              product.image = product.images[0];
+            }
+            // Nếu vẫn không có image, dùng placeholder
+            if (!product.image) {
+              product.image = '/placeholder.jpg';
+            }
+            
+            productItem.product = product;
+          } else {
+            // Nếu không tìm thấy sản phẩm trong database, tạo fallback
+            productItem.product = {
+              _id: productItem.product,
+              name: 'Sản phẩm không còn tồn tại',
+              designName: null,
+              description: 'Sản phẩm này có thể đã bị xóa hoặc không còn khả dụng',
+              price: 0,
+              image: '/placeholder.jpg',
+              previewImage: '/placeholder.jpg',
+              type: 'deleted'
+            };
+          }
+        } else {
+          // Nếu product không phải ObjectId hợp lệ, có thể là custom design
+          productItem.product = {
+            _id: productItem.product,
+            name: 'Sản phẩm tùy chỉnh',
+            designName: null,
+            description: '',
+            price: 0,
+            image: '/dethuong.jpg',
+            previewImage: '/dethuong.jpg',
+            type: 'custom'
+          };
+        }
       }
-      productItem.product = product;
     }
     
     res.json(order);

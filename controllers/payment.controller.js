@@ -8,9 +8,79 @@ exports.createVNPayUrl = async (req, res) => {
   try {
     const { amount, products, name, phone, address, user, returnUrl } = req.body;
     // 1. Tạo đơn hàng trước
+    // Xử lý products để tạo productInfo như trong order.controller.js
+    const mongoose = require('mongoose');
+    const Product = require('../models/Products');
+    const Design = require('../models/Design');
+    
+    const productsWithInfo = await Promise.all(products.map(async (item) => {
+      console.log('Processing product item for VNPay:', item);
+      
+      // Kiểm tra xem _id có phải là ObjectId hợp lệ không
+      if (!mongoose.Types.ObjectId.isValid(item.product)) {
+        console.log('Invalid ObjectId, using item data directly');
+        return {
+          ...item,
+          productInfo: {
+            _id: item.product,
+            name: item.name || 'Sản phẩm tùy chỉnh',
+            designName: item.designName || null,
+            description: item.description || '',
+            price: item.price || 0,
+            image: '/dethuong.jpg',
+            previewImage: '/dethuong.jpg',
+            type: item.type || 'custom'
+          }
+        };
+      }
+      
+      let product = await Product.findById(item.product);
+      let isDesign = false;
+      
+      if (!product) {
+        console.log('Product not found, trying Design...');
+        product = await Design.findById(item.product);
+        isDesign = true;
+      }
+      
+      // Nếu vẫn không tìm thấy, có thể là design tạm thời từ giỏ hàng
+      if (!product) {
+        console.log('Neither Product nor Design found, using item data');
+        return {
+          ...item,
+          productInfo: {
+            _id: item.product,
+            name: item.name || 'Sản phẩm tùy chỉnh',
+            designName: item.designName || null,
+            description: item.description || '',
+            price: item.price || 0,
+            image: '/dethuong.jpg',
+            previewImage: '/dethuong.jpg',
+            type: item.type || 'custom'
+          }
+        };
+      }
+      
+      console.log('Product/Design found:', product.name || product.designName);
+      
+      return {
+        ...item,
+        productInfo: {
+          _id: product?._id?.toString() || item.product,
+          name: product?.name || product?.designName || 'Sản phẩm không xác định',
+          designName: product?.designName || null,
+          description: product?.description || '',
+          price: product?.price || 0,
+          image: product?.image || product?.previewImage || '',
+          previewImage: product?.previewImage || product?.image || '',
+          type: product?.type || (isDesign ? 'design' : 'product')
+        }
+      };
+    }));
+
     const order = new Order({
       user,
-      products,
+      products: productsWithInfo,
       totalPrice: amount,
       name,
       phone,
