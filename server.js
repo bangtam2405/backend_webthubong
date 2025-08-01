@@ -104,6 +104,10 @@ mongoose.connect(process.env.MONGO_URI)
     const productCategoryRoutes = require('./routes/productCategoryRoutes');
     app.use('/api/product-categories', productCategoryRoutes);
 
+    // Route policies
+    const policyRoutes = require('./routes/policyRoutes');
+    app.use('/api/policies', policyRoutes);
+
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
