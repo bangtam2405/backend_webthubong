@@ -86,6 +86,7 @@ exports.createVNPayUrl = async (req, res) => {
       phone,
       address,
       paymentMethod: 'VNPay', // Thêm phương thức thanh toán
+      shippingFee: 0, // VNPay sẽ tính phí ship sau khi thanh toán thành công
     });
     await order.save();
     const orderId = order._id.toString();

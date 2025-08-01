@@ -42,6 +42,9 @@ const userSchema = new mongoose.Schema({
     {
       label: String, // ví dụ: Nhà, Công ty
       address: String,
+      province: String,
+      ward: String,
+      detail: String,
       isDefault: { type: Boolean, default: false }
     }
   ],

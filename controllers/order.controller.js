@@ -9,7 +9,7 @@ const User = require('../models/User');
 
 exports.createOrder = async (req, res) => {
   try {
-    let { user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount } = req.body;
+    let { user, products, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount, shippingFee } = req.body;
     // Ép userId về ObjectId nếu là string
     if (user && typeof user === "string" && mongoose.Types.ObjectId.isValid(user)) {
       user = new mongoose.Types.ObjectId(user);
@@ -142,7 +142,7 @@ exports.createOrder = async (req, res) => {
       };
     }));
 
-    const order = new Order({ user, products: productsWithInfo, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount });
+    const order = new Order({ user, products: productsWithInfo, totalPrice, name, phone, address, paymentMethod, coupon, discountAmount, shippingFee });
     await order.save();
     
     // Cập nhật số lần sử dụng của mã giảm giá nếu có

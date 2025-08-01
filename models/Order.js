@@ -63,6 +63,7 @@ const orderSchema = new Schema({
   },
   coupon: { type: String },
   discountAmount: { type: Number, default: 0 },
+  shippingFee: { type: Number, default: 0 },
   cancelReason: {
     type: String,
     default: ''

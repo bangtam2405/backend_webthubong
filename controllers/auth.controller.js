@@ -5,7 +5,7 @@ const Coupon = require("../models/Coupon.js");
 const { sendMail } = require("../mailer.js");
 
 exports.register = async (req, res) => {
-  const { username, email, password, fullName, phone, dob, gender, address } = req.body;
+  const { username, email, password, fullName, phone, dob, gender, address, province, ward, detail } = req.body;
   if (!username) return res.status(400).json({ message: "Thiếu username" });
   if (!email) return res.status(400).json({ message: "Thiếu email" });
   if (!password) return res.status(400).json({ message: "Thiếu password" });
@@ -24,7 +24,14 @@ exports.register = async (req, res) => {
       phone: phone || '',
       dob: dob ? new Date(dob) : undefined,
       gender: gender || 'other',
-      addresses: address ? [{ label: 'Nhà riêng', address, isDefault: true }] : []
+      addresses: address ? [{ 
+        label: 'Nhà riêng', 
+        address, 
+        province: province || '',
+        ward: ward || '',
+        detail: detail || '',
+        isDefault: true 
+      }] : []
     });
     // Tạo mã giảm giá tự động cho user mới
     const code = `WELCOME${Math.floor(1000 + Math.random() * 9000)}`;
@@ -64,7 +71,7 @@ exports.register = async (req, res) => {
 //Cap nhat Profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { userId, username, avatar, email, fullName, phone, dob, gender, address } = req.body;
+    const { userId, username, avatar, email, fullName, phone, dob, gender, address, province, ward, detail } = req.body;
     if (!userId || !username) return res.status(400).json({ success: false, error: "Thiếu userId hoặc username" });
     const updateFields = { username };
     if (avatar !== undefined) updateFields.avatar = avatar;
@@ -73,7 +80,13 @@ exports.updateProfile = async (req, res) => {
     if (phone !== undefined) updateFields.phone = phone;
     if (dob !== undefined) updateFields.dob = dob;
     if (gender !== undefined) updateFields.gender = gender;
-    if (address !== undefined) updateFields["addresses.0.address"] = address; // cập nhật địa chỉ mặc định
+    if (address !== undefined) {
+      // Cập nhật địa chỉ mặc định với thông tin chi tiết
+      updateFields["addresses.0.address"] = address;
+      if (province !== undefined) updateFields["addresses.0.province"] = province;
+      if (ward !== undefined) updateFields["addresses.0.ward"] = ward;
+      if (detail !== undefined) updateFields["addresses.0.detail"] = detail;
+    }
     const user = await User.findByIdAndUpdate(userId, updateFields, { new: true });
     if (!user) return res.status(404).json({ success: false, error: "Không tìm thấy user" });
     res.json({ success: true, user });
