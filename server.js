@@ -39,6 +39,11 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Health check endpoint - Render cần endpoint này để detect port
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Server is running' });
+});
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
@@ -121,9 +126,20 @@ mongoose.connect(process.env.MONGO_URI)
     const policyRoutes = require('./routes/policyRoutes');
     app.use('/api/policies', policyRoutes);
 
+    // Start server sau khi setup routes
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Health check: http://0.0.0.0:${PORT}/health`);
+    });
   })
   .catch(err => {
     console.error('MongoDB connect error:', err);
+    // Vẫn start server ngay cả khi MongoDB connect fail
+    // Để Render có thể detect port và show error rõ ràng hơn
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on port ${PORT} (MongoDB connection failed)`);
+      console.error('⚠️ WARNING: Server started but MongoDB is not connected');
+    });
   });
