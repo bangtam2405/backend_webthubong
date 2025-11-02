@@ -9,10 +9,13 @@ router.post('/', auth, reviewController.addReview);
 // Lấy tất cả đánh giá cho một sản phẩm (không cần auth)
 router.get('/product/:productId', reviewController.getReviewsByProduct);
 
-// Lấy tất cả đánh giá của người dùng hiện tại
+// Lấy tất cả đánh giá của một người dùng
 router.get('/user', auth, reviewController.getReviewsByUser);
 
-// Thêm route lấy tất cả review, có filter rating, limit
-router.get('/', require('../controllers/review.controller').getAllReviews);
+// Lấy tất cả review (có thể filter)
+router.get('/', reviewController.getAllReviews);
+
+// Xóa đánh giá
+router.delete('/:id', auth, reviewController.deleteReview);
 
 module.exports = router; 

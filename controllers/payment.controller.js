@@ -6,7 +6,7 @@ const Order = require('../models/Order');
 // VNPay
 exports.createVNPayUrl = async (req, res) => {
   try {
-    const { amount, products, name, phone, address, user, returnUrl } = req.body;
+    const { amount, products, name, phone, address, user, returnUrl, customerNote, shippingFee, coupon, discountAmount } = req.body;
     // 1. Tạo đơn hàng trước
     // Xử lý products để tạo productInfo như trong order.controller.js
     const mongoose = require('mongoose');
@@ -19,6 +19,34 @@ exports.createVNPayUrl = async (req, res) => {
       // Kiểm tra xem _id có phải là ObjectId hợp lệ không
       if (!mongoose.Types.ObjectId.isValid(item.product)) {
         console.log('Invalid ObjectId, using item data directly');
+        // Trích xuất kích thước và chất liệu từ specifications
+        let sizeText = '';
+        let materialText = '';
+        
+        if (item.specifications) {
+          sizeText = item.specifications.sizeName || item.specifications.size || '';
+          materialText = item.specifications.material || '';
+        }
+        
+        // Nếu không có từ specifications, lấy từ item trực tiếp
+        if (!sizeText) {
+          sizeText = item.size || '';
+        }
+        if (!materialText) {
+          materialText = item.material || '';
+        }
+        
+        // Fallback từ description nếu thiếu
+        if (!sizeText && item.description) {
+          const sizeFromDesc = /Kích thước\s*:\s*([^;]+)/i.exec(item.description)?.[1]?.trim();
+          sizeText = sizeFromDesc || '';
+        }
+        
+        if (!materialText && item.description) {
+          const materialFromDesc = /Chất liệu\s*:\s*([^;]+)/i.exec(item.description)?.[1]?.trim();
+          materialText = materialFromDesc || '';
+        }
+        
         return {
           ...item,
           productInfo: {
@@ -27,9 +55,12 @@ exports.createVNPayUrl = async (req, res) => {
             designName: item.designName || null,
             description: item.description || '',
             price: item.price || 0,
-            image: '/dethuong.jpg',
-            previewImage: '/dethuong.jpg',
-            type: item.type || 'custom'
+            image: item.image || item.previewImage || '/dethuong.jpg',
+            previewImage: item.previewImage || item.image || '/dethuong.jpg',
+            type: 'custom',
+            specifications: item.specifications || null,
+            sizeText: sizeText,
+            materialText: materialText
           }
         };
       }
@@ -46,6 +77,34 @@ exports.createVNPayUrl = async (req, res) => {
       // Nếu vẫn không tìm thấy, có thể là design tạm thời từ giỏ hàng
       if (!product) {
         console.log('Neither Product nor Design found, using item data');
+        // Trích xuất kích thước và chất liệu từ specifications
+        let sizeText = '';
+        let materialText = '';
+        
+        if (item.specifications) {
+          sizeText = item.specifications.sizeName || item.specifications.size || '';
+          materialText = item.specifications.material || '';
+        }
+        
+        // Nếu không có từ specifications, lấy từ item trực tiếp
+        if (!sizeText) {
+          sizeText = item.size || '';
+        }
+        if (!materialText) {
+          materialText = item.material || '';
+        }
+        
+        // Fallback từ description nếu thiếu
+        if (!sizeText && item.description) {
+          const sizeFromDesc = /Kích thước\s*:\s*([^;]+)/i.exec(item.description)?.[1]?.trim();
+          sizeText = sizeFromDesc || '';
+        }
+        
+        if (!materialText && item.description) {
+          const materialFromDesc = /Chất liệu\s*:\s*([^;]+)/i.exec(item.description)?.[1]?.trim();
+          materialText = materialFromDesc || '';
+        }
+        
         return {
           ...item,
           productInfo: {
@@ -54,27 +113,56 @@ exports.createVNPayUrl = async (req, res) => {
             designName: item.designName || null,
             description: item.description || '',
             price: item.price || 0,
-            image: '/dethuong.jpg',
-            previewImage: '/dethuong.jpg',
-            type: item.type || 'custom'
+            image: item.image || item.previewImage || '/dethuong.jpg',
+            previewImage: item.previewImage || item.image || '/dethuong.jpg',
+            type: 'custom',
+            specifications: item.specifications || null,
+            sizeText: sizeText,
+            materialText: materialText
           }
         };
       }
       
       console.log('Product/Design found:', product.name || product.designName);
       
+      // Sản phẩm bình thường hoặc design từ database
+      const productInfo = {
+        _id: product?._id?.toString() || item.product,
+        name: product?.name || product?.designName || 'Sản phẩm không xác định',
+        designName: product?.designName || null,
+        description: product?.description || '',
+        price: product?.price || item.price || 0,
+        image: product?.image || product?.previewImage || item.image || '/placeholder.jpg',
+        previewImage: product?.previewImage || product?.image || item.previewImage || '/placeholder.jpg',
+        type: product?.type || (isDesign ? 'design' : 'product'),
+        specifications: product?.specifications || item.specifications || null,
+        sizeText: (item.specifications?.sizeName || '') || (product?.specifications?.sizeName || '') || item.size || (/Kích thước\s*:\s*([^;]+)/i.exec(item.description || product?.description || '')?.[1] || ''),
+        materialText: (item.specifications?.material || '') || (product?.specifications?.material || '') || item.material || (/Chất liệu\s*:\s*([^;]+)/i.exec(item.description || product?.description || '')?.[1] || '')
+      };
+      
+      // Đảm bảo sizeText và materialText luôn có giá trị
+      if (!productInfo.sizeText && productInfo.description) {
+        const sizeFromDesc = /Kích thước\s*:\s*([^;]+)/i.exec(productInfo.description)?.[1]?.trim();
+        productInfo.sizeText = sizeFromDesc || '';
+      }
+      
+      if (!productInfo.materialText && productInfo.description) {
+        const materialFromDesc = /Chất liệu\s*:\s*([^;]+)/i.exec(productInfo.description)?.[1]?.trim();
+        productInfo.materialText = materialFromDesc || '';
+      }
+      
+      // Nếu vẫn không có, thử lấy từ specifications
+      if (!productInfo.sizeText && productInfo.specifications) {
+        productInfo.sizeText = productInfo.specifications.size || productInfo.specifications.sizeName || '';
+      }
+      
+      if (!productInfo.materialText && productInfo.specifications) {
+        productInfo.materialText = productInfo.specifications.material || productInfo.specifications.materialName || '';
+      }
+      
       return {
         ...item,
-        productInfo: {
-          _id: product?._id?.toString() || item.product,
-          name: product?.name || product?.designName || 'Sản phẩm không xác định',
-          designName: product?.designName || null,
-          description: product?.description || '',
-          price: product?.price || 0,
-          image: product?.image || product?.previewImage || '',
-          previewImage: product?.previewImage || product?.image || '',
-          type: product?.type || (isDesign ? 'design' : 'product')
-        }
+        productInfo: productInfo
       };
     }));
 
@@ -86,9 +174,45 @@ exports.createVNPayUrl = async (req, res) => {
       phone,
       address,
       paymentMethod: 'VNPay', // Thêm phương thức thanh toán
-      shippingFee: 0, // VNPay sẽ tính phí ship sau khi thanh toán thành công
+      shippingFee: shippingFee || 0, // Sử dụng phí ship từ request
+      customerNote: customerNote || '', // Thêm ghi chú khách hàng
+      coupon: coupon || null, // Thêm coupon
+      discountAmount: discountAmount || 0, // Thêm số tiền giảm giá
     });
     await order.save();
+
+    // Sau khi tạo order cho VNPay: tăng 'sold' cho các Category part của sản phẩm tuỳ chỉnh
+    try {
+      const mongoose = require('mongoose');
+      const Category = require('../models/Category');
+      const incSoldForVal = async (val, qty) => {
+        if (!val) return;
+        const v = String(val).trim();
+        if (!v) return;
+        if (mongoose.Types.ObjectId.isValid(v)) {
+          await Category.findByIdAndUpdate(v, { $inc: { sold: qty, stock: -qty } });
+        } else {
+          await Category.findOneAndUpdate({ name: v }, { $inc: { sold: qty, stock: -qty } });
+        }
+      };
+      for (const item of productsWithInfo) {
+        const info = item.productInfo || {};
+        if (info && info.type === 'custom' && info.specifications) {
+          const qty = Number(item.quantity) || 1;
+          const specs = info.specifications || {};
+          await incSoldForVal(specs.body, qty);
+          await incSoldForVal(specs.eyes, qty);
+          await incSoldForVal(specs.mouth, qty);
+          if (Array.isArray(specs.accessories)) {
+            for (const acc of specs.accessories) {
+              await incSoldForVal(acc, 1);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('VNPay: lỗi cập nhật sold cho Category parts:', e.message);
+    }
     const orderId = order._id.toString();
 
     const tmnCode = process.env.VNP_TMNCODE;

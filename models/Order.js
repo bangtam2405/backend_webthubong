@@ -11,13 +11,13 @@ const orderSchema = new Schema({
     {
       _id: { type: Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
       product: {
-        type: Schema.Types.ObjectId,
-        ref: 'Product', 
+        type: Schema.Types.Mixed, // Cho phép cả ObjectId và String cho custom designs
       },
       quantity: {
         type: Number,
         required: true
-      }
+      },
+      productInfo: Schema.Types.Mixed
     }
   ],
   totalPrice: {
@@ -69,6 +69,10 @@ const orderSchema = new Schema({
     default: ''
   },
   cancelNote: {
+    type: String,
+    default: ''
+  },
+  customerNote: {
     type: String,
     default: ''
   }

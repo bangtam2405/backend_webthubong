@@ -82,4 +82,51 @@ exports.getAllReviews = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Lỗi khi lấy đánh giá', error: error.message });
   }
+};
+
+// Xóa đánh giá
+exports.deleteReview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId; // Lấy userId từ auth middleware
+
+    // Tìm review cần xóa
+    const review = await Review.findById(id);
+    if (!review) {
+      return res.status(404).json({ message: 'Không tìm thấy đánh giá' });
+    }
+
+    // Kiểm tra quyền xóa (chỉ admin hoặc chủ review mới được xóa)
+    const userRole = req.user.role;
+    if (userRole !== 'admin' && review.user.toString() !== userId) {
+      return res.status(403).json({ message: 'Bạn không có quyền xóa đánh giá này' });
+    }
+
+    // Lưu productId để cập nhật rating sau khi xóa
+    const productId = review.product;
+
+    // Xóa review
+    await Review.findByIdAndDelete(id);
+
+    // Cập nhật rating và reviews trong Product model
+    const product = await Product.findById(productId);
+    if (product) {
+      const allReviews = await Review.find({ product: productId });
+      if (allReviews.length > 0) {
+        const totalRating = allReviews.reduce((sum, review) => sum + review.rating, 0);
+        product.rating = totalRating / allReviews.length;
+        product.reviews = allReviews.length;
+      } else {
+        // Nếu không còn review nào, reset về 0
+        product.rating = 0;
+        product.reviews = 0;
+      }
+      await product.save();
+    }
+
+    res.status(200).json({ message: 'Đã xóa đánh giá thành công' });
+  } catch (error) {
+    console.error('Lỗi khi xóa đánh giá:', error);
+    res.status(500).json({ message: 'Lỗi khi xóa đánh giá', error: error.message });
+  }
 }; 

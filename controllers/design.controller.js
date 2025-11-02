@@ -2,6 +2,7 @@ const Design = require("../models/Design");
 const User = require("../models/User");
 const Category = require("../models/Category");
 const Accessory = require("../models/Accessory");
+const ProductCategory = require("../models/ProductCategory");
 
 // Tạo mới thiết kế
 exports.createDesign = async (req, res) => {
@@ -100,29 +101,101 @@ exports.getDesignById = async (req, res) => {
       user = await User.findOne({ _id: design.userId }, 'fullName avatar');
     }
 
-    // Trả về parts là _id (string) thay vì object
-    // Luôn trả về đủ mọi trường cho parts
+    // Lấy thông tin chi tiết của các parts
     const allPartKeys = [
       "body", "ears", "eyes", "nose", "mouth", "furColor", "material", "clothing", "size", "name"
     ];
-    const partsRaw = {};
+    
+    const populatedParts = {};
     for (const key of allPartKeys) {
-      if (Array.isArray(design.parts?.[key])) {
-        partsRaw[key] = design.parts[key].filter(Boolean);
+      const partId = design.parts?.[key];
+      if (partId && partId !== "") {
+        try {
+          let category = null;
+          
+          // Ưu tiên tìm trong ProductCategory cho các trường liên quan đến màu sắc và vật liệu
+          if (['furColor', 'material', 'clothing'].includes(key)) {
+            category = await ProductCategory.findById(partId);
+            if (category) {
+              populatedParts[key] = {
+                _id: category._id,
+                name: category.name,
+                color: category.color || "",
+                price: category.price || 0,
+                image: category.image || ""
+              };
+            }
+          }
+          
+          // Nếu không tìm thấy trong ProductCategory hoặc không phải trường màu sắc, tìm trong Category
+          if (!category) {
+            category = await Category.findById(partId);
+            if (category) {
+              populatedParts[key] = {
+                _id: category._id,
+                name: category.name,
+                color: "",
+                price: category.price || 0,
+                image: category.image || ""
+              };
+            }
+          }
+          
+          // Nếu vẫn không tìm thấy, tìm trong ProductCategory
+          if (!category) {
+            category = await ProductCategory.findById(partId);
+            if (category) {
+              populatedParts[key] = {
+                _id: category._id,
+                name: category.name,
+                color: category.color || "",
+                price: category.price || 0,
+                image: category.image || ""
+              };
+            }
+          }
+          
+          // Nếu không tìm thấy ở đâu cả
+          if (!category) {
+            populatedParts[key] = { _id: partId, name: "Không xác định", color: "", price: 0, image: "" };
+          }
+        } catch (err) {
+          populatedParts[key] = { _id: partId, name: "Không xác định", color: "", price: 0, image: "" };
+        }
       } else {
-        partsRaw[key] = design.parts?.[key] || "";
+        populatedParts[key] = null;
       }
     }
-    // accessories là mảng _id
-    if (Array.isArray(design.parts?.accessories)) {
-      partsRaw.accessories = design.parts.accessories.filter(Boolean);
+
+    // Lấy thông tin accessories
+    if (Array.isArray(design.parts?.accessories) && design.parts.accessories.length > 0) {
+      try {
+        const accessories = await Accessory.find({ _id: { $in: design.parts.accessories } });
+        populatedParts.accessories = accessories.map(acc => ({
+          _id: acc._id,
+          name: acc.name,
+          color: acc.color || "",
+          price: acc.price || 0
+        }));
+      } catch (err) {
+        populatedParts.accessories = [];
+      }
     } else {
-      partsRaw.accessories = [];
+      populatedParts.accessories = [];
     }
-    // Trả về dữ liệu thiết kế kèm thông tin user (nếu có) và parts là _id
+
+    // Trả về dữ liệu thiết kế kèm thông tin user và parts đã populate
     const designObj = design.toObject();
     designObj.user = user ? { fullName: user.fullName, avatar: user.avatar } : null;
-    designObj.parts = partsRaw;
+    designObj.parts = populatedParts;
+    
+    // Thêm fabricColor từ parts.furColor nếu có
+    if (populatedParts.furColor && populatedParts.furColor.color) {
+      designObj.fabricColor = populatedParts.furColor.color;
+    } else {
+      designObj.fabricColor = "#000000"; // Màu mặc định
+    }
+    
     res.json(designObj);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -195,16 +268,23 @@ exports.cloneDesign = async (req, res) => {
 exports.getPublicDesigns = async (req, res) => {
   try {
     const designs = await Design.find({ isPublic: true })
-      .populate('userId', 'fullName avatar') // Lấy thông tin user
       .sort({ updatedAt: -1 });
       
-    // Đổi tên userId thành user cho nhất quán
-    const designsWithUser = designs.map(d => {
-        const designObject = d.toObject();
-        designObject.user = designObject.userId;
-        delete designObject.userId;
-        return designObject;
-    });
+    // Populate thông tin user cho từng design
+    const designsWithUser = await Promise.all(designs.map(async (design) => {
+      const designObject = design.toObject();
+      
+      // Lấy thông tin user từ User model
+      if (designObject.userId) {
+        const user = await User.findById(designObject.userId).select('fullName username avatar');
+        designObject.user = user;
+      } else {
+        designObject.user = null;
+      }
+      
+      delete designObject.userId;
+      return designObject;
+    }));
 
     res.json(designsWithUser);
   } catch (err) {
